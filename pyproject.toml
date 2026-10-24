@@ -1,0 +1,30 @@
+[project]
+name = "nepal-security-incident-map"
+version = "0.1.0"
+description = "Map, timeline and trend dashboard of publicly reported cybersecurity incidents in Nepal, built with Streamlit."
+readme = "README.md"
+authors = [
+    { name = "Saphall", email = "safalsakha@gmail.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "nepali-datetime>=1.0.8.5",
+    "pandas>=2.2",
+    "plotly>=6.0",
+    "streamlit>=1.66.0",
+]
+
+[project.scripts]
+app = "nepal_incident_map:main"
+
+[build-system]
+requires = ["uv_build>=0.13.0,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "nepal_incident_map"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
