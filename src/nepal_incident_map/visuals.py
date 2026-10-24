@@ -13,7 +13,7 @@ import pandas as pd
 
 from nepal_incident_map import data
 from nepal_incident_map.geo import GAZETTEER
-from nepal_incident_map.schema import severity_label
+from nepal_incident_map.schema import severity_of
 from nepal_incident_map.theme import CATEGORY_COLORS, CYAN, SEVERITY_COLORS, STATUS_COLORS, chip
 
 esc = html.escape
@@ -23,7 +23,7 @@ PEAKS = [
     (300, 96, "Dhaulagiri", "8,167 m"), (440, 108, "Annapurna I", "8,091 m"), (580, 98, "Manaslu", "8,163 m"),
     (790, 46, "Sagarmatha", "8,849 m"), (960, 78, "Makalu", "8,485 m"), (1130, 64, "Kanchenjunga", "8,586 m"),
 ]
-NAV = (("map", "Map"), ("story", "Timeline"), ("trends", "Trends"), ("log", "Incident log"), ("how", "Method"))
+NAV = (("globe", "Globe"), ("map", "Map"), ("story", "Timeline"), ("trends", "Trends"), ("log", "Incident log"), ("how", "Method"))
 
 
 def _star(cx: float, cy: float, points: int, outer: float, inner: float) -> str:
@@ -187,7 +187,7 @@ def map_html(frame: pd.DataFrame) -> str:
 
     def pin(left: float, top: float, name: str, sub: str, count: int, severity: str, lines: list[str], extra: str = "") -> str:
         size = 12 + 5 * math.sqrt(count)
-        pulse = {"Critical": 1.6, "High": 2.2, "Medium": 3.0, "Low": 4.0}[severity]
+        pulse = {"Critical": 1.6, "High": 2.2, "Medium": 3.0, "Low": 4.0, "Unrated": 4.5}[severity]
         side = " right" if left > 68 else (" left" if left < 22 else "")
         return (
             f"<div class='pin{side}{extra}' tabindex='0' style='left:{left:.2f}%;top:{top:.2f}%;--c:{SEVERITY_COLORS[severity]};--s:{size:.0f}px;--d:{pulse}s'>"
@@ -204,7 +204,7 @@ def map_html(frame: pd.DataFrame) -> str:
     if len(unplaced):
         lines = [f"{r.date:%d %b %Y} | {r.category} | {r.severity}: {r.title}" for r in unplaced.itertuples()]
         worst = max(unplaced["score"])
-        pins.append(pin(7, 86, "Nationwide", "no single city", len(unplaced), severity_label(worst), lines, " nw"))
+        pins.append(pin(7, 86, "Nationwide", "no single city", len(unplaced), severity_of(worst), lines, " nw"))
 
     legend = "".join(chip(s, c) for s, c in SEVERITY_COLORS.items())
     plotted = int(places["count"].sum()) if len(places) else 0
@@ -228,8 +228,9 @@ def feed_html(frame: pd.DataFrame, limit: int = 12) -> str:
 
 
 def chips_html(row) -> str:
+    live = [chip("LIVE WEB / UNREVIEWED", "#ffb020")] if row.origin == "web" else []
     return " ".join([
-        chip(row.severity, SEVERITY_COLORS[row.severity]), chip(row.category, CATEGORY_COLORS[row.category]),
+        *live, chip(row.severity, SEVERITY_COLORS[row.severity]), chip(row.category, CATEGORY_COLORS[row.category]),
         chip(row.verification, STATUS_COLORS[row.verification]), chip(row.sector),
     ])
 

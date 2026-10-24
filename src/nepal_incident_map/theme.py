@@ -7,13 +7,13 @@ from dataclasses import dataclass
 
 import streamlit as st
 
-SEVERITY_COLORS = {"Low": "#5fd38d", "Medium": "#ffc233", "High": "#ff7a3d", "Critical": "#ff3b6b"}
+SEVERITY_COLORS = {"Unrated": "#8fa3c7", "Low": "#5fd38d", "Medium": "#ffc233", "High": "#ff7a3d", "Critical": "#ff3b6b"}
 STATUS_COLORS = {"Confirmed": "#2de6a6", "Reported": "#29d3ff", "Claimed": "#ffc233"}
 CATEGORY_COLORS = {
     "Ransomware": "#ff3b6b", "Data exposure": "#b57bff", "Phishing": "#ffc233",
     "Defacement": "#ff7a3d", "Service disruption": "#29d3ff", "Financial fraud": "#2de6a6",
 }
-TEXT, MUTED, CYAN, CRIMSON = "#dbe7ff", "#8fa3c7", "#00e5ff", "#dc143c"
+TEXT, MUTED, CYAN, CRIMSON = "#e4edff", "#9db0d2", "#00e5ff", "#dc143c"
 
 
 @dataclass(frozen=True)
@@ -34,15 +34,15 @@ class Palette:
 def palette(light: bool) -> Palette:
     if light:
         return Palette(True, "#10244a", "#51668f", "rgba(20,60,120,0.12)", "#f4f8ff", "#ffffff", "#007c96", "#ffffff", "rgba(0,124,150,0.10)")
-    return Palette(False, TEXT, MUTED, "rgba(255,255,255,0.07)", "#05080f", "#0a1222", CYAN, "#021018", "rgba(0,229,255,0.10)")
+    return Palette(False, TEXT, MUTED, "rgba(255,255,255,0.09)", "#111c36", "#1b2a4a", CYAN, "#021018", "rgba(0,229,255,0.10)")
 
 
 CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Mukta:wght@500;600&family=Inter:wght@400;500;600&display=swap');
-:root { --bg:#050912; --text:#dbe7ff; --muted:#8fa3c7; --head:#ffffff; --body2:#c3d2ec; --cyan:#00e5ff; --crimson:#dc143c; --blue:#3d7bff;
-  --glass:rgba(16,28,54,.46); --stroke:rgba(150,215,255,.20); --line2:rgba(255,255,255,.07); --navbg:rgba(5,9,18,.55); --tipbg:rgba(8,15,32,.84);
-  --field:rgba(255,255,255,.06); --maptext:#e8f4ff; --ringbg:rgba(5,9,18,.95); --yearbg:rgba(5,9,18,.9); --chipk:100%; --herop:#aebfdc; --shadow:rgba(0,0,0,.85); }
+:root { --bg:#111c36; --text:#e4edff; --muted:#9db0d2; --head:#ffffff; --body2:#d2def4; --cyan:#00e5ff; --crimson:#dc143c; --blue:#3d7bff;
+  --glass:rgba(46,68,114,.5); --stroke:rgba(150,215,255,.26); --line2:rgba(255,255,255,.10); --navbg:rgba(14,24,46,.62); --tipbg:rgba(20,34,62,.9);
+  --field:rgba(255,255,255,.09); --maptext:#eef6ff; --ringbg:rgba(14,24,46,.95); --yearbg:rgba(14,24,46,.92); --chipk:100%; --herop:#c2d0e8; --shadow:rgba(0,0,0,.6); }
 html, body, .stApp { font-family:'Inter', system-ui, sans-serif; color:var(--text); scroll-behavior:smooth; }
 [data-testid="stMain"], section.main { scroll-behavior:smooth; }
 
@@ -85,7 +85,7 @@ h1, h2, h3, h4 { font-family:'Rajdhani', sans-serif !important; letter-spacing:.
 
 /* hero */
 .hero2 { position:relative; overflow:hidden; border-radius:26px; border:1px solid var(--stroke); min-height:640px; margin-bottom:8px;
-  background:linear-gradient(180deg, #050a1a 0%, #0a1431 52%, #12214a 100%); box-shadow:0 30px 80px -40px rgba(0,229,255,.55), inset 0 1px 0 rgba(255,255,255,.14); }
+  background:linear-gradient(180deg, #0b1634 0%, #152b5a 52%, #20407a 100%); box-shadow:0 30px 80px -40px rgba(0,229,255,.55), inset 0 1px 0 rgba(255,255,255,.14); }
 .hero2 .aurora { position:absolute; inset:-30%; filter:blur(50px); opacity:.9; animation:drift 24s ease-in-out infinite alternate;
   background:radial-gradient(30% 30% at 70% 22%, rgba(0,229,255,.28), transparent 70%), radial-gradient(28% 30% at 22% 30%, rgba(220,20,60,.26), transparent 70%), radial-gradient(30% 24% at 50% 10%, rgba(120,90,255,.22), transparent 70%); }
 .hero2 .peaks { position:absolute; left:0; right:0; bottom:0; width:100%; height:300px; }
@@ -106,7 +106,7 @@ h1, h2, h3, h4 { font-family:'Rajdhani', sans-serif !important; letter-spacing:.
 .hero2 p { max-width:720px; color:var(--herop); margin:14px 0 16px; font-size:15.5px; line-height:1.6; }
 .ribbon { display:flex; flex-wrap:wrap; gap:8px; }
 .ticker { position:absolute; left:0; right:0; bottom:20px; height:40px; z-index:3; display:flex; align-items:center; overflow:hidden;
-  background:rgba(5,9,18,.6); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); border-top:1px solid var(--stroke); border-bottom:1px solid var(--stroke); }
+  background:rgba(14,26,50,.62); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); border-top:1px solid var(--stroke); border-bottom:1px solid var(--stroke); }
 .tk-tag { flex:none; z-index:2; font:700 11px 'JetBrains Mono', monospace; letter-spacing:.2em; color:#fff; background:var(--crimson); padding:0 16px; height:100%; display:flex; align-items:center; box-shadow:0 0 24px rgba(220,20,60,.7); }
 .tk-wrap { overflow:hidden; flex:1; }
 .tk-track { display:flex; width:max-content; gap:46px; padding-left:30px; animation:tick 80s linear infinite; }
@@ -144,7 +144,7 @@ h1, h2, h3, h4 { font-family:'Rajdhani', sans-serif !important; letter-spacing:.
 
 /* radar map */
 .mapwrap { position:relative; padding:4px 4px 2px; }
-.mapbox { position:relative; width:100%; aspect-ratio:830 / 475; border-radius:16px; background:radial-gradient(70% 80% at 40% 55%, rgba(0,229,255,.08), rgba(3,8,18,.55)); border:1px solid rgba(0,229,255,.14); }
+.mapbox { position:relative; width:100%; aspect-ratio:830 / 475; border-radius:16px; background:radial-gradient(70% 80% at 40% 55%, rgba(0,229,255,.10), rgba(14,28,56,.55)); border:1px solid rgba(0,229,255,.20); }
 .mapsvg { position:absolute; inset:0; width:100%; height:100%; border-radius:16px; }
 .cn { position:absolute; width:20px; height:20px; border:2px solid var(--cyan); opacity:.8; z-index:3; pointer-events:none; }
 .cn.a { left:-1px; top:-1px; border-right:0; border-bottom:0; border-top-left-radius:14px; } .cn.b { right:-1px; top:-1px; border-left:0; border-bottom:0; border-top-right-radius:14px; }
@@ -212,8 +212,8 @@ h1, h2, h3, h4 { font-family:'Rajdhani', sans-serif !important; letter-spacing:.
 [data-baseweb="tag"] { background:rgba(0,229,255,.16) !important; border-radius:8px !important; }
 [data-testid="stWidgetLabel"] p { font:500 11px 'JetBrains Mono', monospace; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); }
 [data-testid="stDataFrame"] { border:1px solid var(--stroke); border-radius:14px; overflow:hidden; }
-.stDownloadButton button, .stButton button { border:1px solid var(--cyan); background:rgba(0,229,255,.08); color:var(--cyan); font-family:'JetBrains Mono', monospace; border-radius:12px; }
-.stDownloadButton button:hover, .stButton button:hover { background:rgba(0,229,255,.2); border-color:var(--head); color:var(--head); }
+.stDownloadButton button, .stButton button, [data-testid="stFormSubmitButton"] button { border:1px solid var(--cyan); background:rgba(0,229,255,.08); color:var(--cyan); font-family:'JetBrains Mono', monospace; border-radius:12px; }
+.stDownloadButton button:hover, .stButton button:hover, [data-testid="stFormSubmitButton"] button:hover { background:rgba(0,229,255,.2); border-color:var(--head); color:var(--head); }
 [data-testid="stExpander"] { border:1px solid var(--stroke); border-radius:16px; background:rgba(255,255,255,.03); }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation:none !important; transition:none !important; scroll-behavior:auto !important; } }
 </style>
@@ -247,6 +247,31 @@ input::placeholder { color:var(--muted) !important; -webkit-text-fill-color:var(
 [data-testid="stBaseButton-pillsActive"] { background:rgba(0,117,143,.16) !important; border-color:var(--cyan) !important; }
 [data-testid="stBaseButton-pills"] *, [data-testid="stBaseButton-pillsActive"] * { color:var(--text) !important; }
 [data-testid="stAlert"] * { color:inherit; }
+[data-testid="stMarkdownContainer"] a { color:var(--cyan) !important; text-decoration-color:rgba(0,117,143,.5); }
+
+/* popovers: selectbox list, calendar, tooltips (rendered in portals, so they stay dark otherwise) */
+[data-testid="stSelectboxVirtualDropdown"], [data-testid="stDateInputCalendar"], [data-testid="stTooltipContent"] { background:#ffffff !important; border:1px solid var(--stroke) !important; border-radius:12px !important; box-shadow:0 18px 44px -18px rgba(30,60,120,.45) !important; }
+[data-testid="stSelectboxVirtualDropdown"] *, [data-testid="stTooltipContent"] * { color:var(--text) !important; }
+[data-testid="stSelectboxVirtualDropdown"] [role="option"] { background:transparent !important; }
+[data-testid="stSelectboxVirtualDropdown"] [role="option"]:hover, [data-testid="stSelectboxVirtualDropdown"] [role="option"][aria-selected="true"] { background:rgba(0,117,143,.12) !important; }
+[data-testid="stDateInputCalendar"], [data-testid="stDateInputCalendar"] th, [data-testid="stDateInputCalendar"] h2, [data-testid="stDateInputCalendar"] [role="combobox"], [data-testid="stDateInputCalendar"] [role="button"], [data-testid="stDateInputCalendar"] button { color:var(--text) !important; }
+[data-testid="stDateInputCalendar"] svg { color:var(--muted) !important; fill:var(--muted) !important; }
+[data-testid="stDateInputCalendar"] div:not([role]) { color:var(--text) !important; }
+[data-testid="stDateInputCalendar"] [role="button"]:hover { background:rgba(0,117,143,.12) !important; }
+[data-testid="stDateInputCalendar"] [aria-selected="true"] { background:rgba(0,117,143,.13) !important; }
+[data-testid="stDateInputCalendar"] [aria-selected="true"][aria-label*="Selected"] { background:var(--cyan) !important; color:#ffffff !important; }
+
+/* form controls (this Streamlit builds them from react-aria, so baseweb selectors miss them) */
+button[role="radio"], [role="toolbar"] button { background:rgba(255,255,255,.78) !important; color:var(--text) !important; border-color:var(--stroke) !important; }
+button[role="radio"] *, [role="toolbar"] button * { color:inherit !important; }
+button[role="radio"][aria-checked="true"], [role="toolbar"] button[aria-pressed="true"] { background:rgba(0,117,143,.16) !important; color:#004d60 !important; border-color:var(--cyan) !important; }
+[data-testid="stTextInputRootElement"], [data-testid="stNumberInputContainer"], [data-testid="stTextAreaRootElement"], [data-testid="stDateInputField"], .react-aria-ComboBox > [role="group"] { background:var(--field) !important; border-color:var(--stroke) !important; }
+[data-testid="stDateInputField"] [role="spinbutton"], [data-testid="stDateInputField"] span { color:var(--text) !important; }
+.react-aria-ComboBox svg, [data-testid="stDateInput"] svg, [data-testid="stNumberInputContainer"] svg { color:var(--muted) !important; fill:var(--muted) !important; }
+[data-testid="stNumberInputContainer"] button { background:transparent !important; }
+[data-testid="stFileUploaderDropzone"] button, [data-testid^="stBaseButton-secondary"] { background:rgba(0,117,143,.12) !important; border:1px solid var(--cyan) !important; color:#004d60 !important; }
+[data-testid="stFileUploaderDropzone"] button * { color:#004d60 !important; }
+label input[type="checkbox"]:not(:checked) + div:not(:has(> div)) { background:var(--field) !important; border-color:var(--cyan) !important; }
 
 /* hero turns to a Himalayan dawn */
 .hero2 { background:linear-gradient(180deg, #a9cdf2 0%, #d9e8fb 42%, #ffe1d0 100%); box-shadow:0 30px 80px -40px rgba(30,80,160,.55), inset 0 1px 0 rgba(255,255,255,.7); }
@@ -254,7 +279,7 @@ input::placeholder { color:var(--muted) !important; -webkit-text-fill-color:var(
 .hero2 h1 { color:#0b1b3a; text-shadow:0 0 24px rgba(255,255,255,.7); } .hero2 .np { color:#b3122e; } .hero2 .eyebrow { color:#00667d; }
 .stars { display:none; } .mf0 { stop-color:#86a9d6; } .mf1 { stop-color:#3d5f93; } .mm0 { stop-color:#4a6c9f; } .mm1 { stop-color:#2b4573; } .mt-near { fill:#17294a; }
 .mt-far, .mt-mid { stroke:#ffffff; stroke-opacity:.55; } .snow { fill:#ffffff; opacity:1; } .pk-n { fill:#0b3f55; } .pk-h { fill:#2d5d78; }
-.ticker { background:rgba(255,255,255,.62); } .tk { color:#1d3358; } .tk i { color:#7d93b8; }
+.ticker { background:rgba(255,255,255,.78); } .tk { color:#0f2247; } .tk i { color:#5a7099; } .tk b { filter:brightness(.6) saturate(1.3); }
 
 /* radar map */
 .mapbox { background:radial-gradient(70% 80% at 40% 55%, rgba(0,150,200,.10), rgba(255,255,255,.55)); border-color:rgba(0,117,143,.28); }

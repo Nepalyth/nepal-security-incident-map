@@ -11,7 +11,6 @@ from nepal_incident_map import data
 from nepal_incident_map.schema import CATEGORIES, SEVERITIES
 from nepal_incident_map.theme import CATEGORY_COLORS, SEVERITY_COLORS, STATUS_COLORS, Palette, palette
 
-SEVERITY_SIZE = {"Low": 13, "Medium": 18, "High": 24, "Critical": 31}
 _DARK = palette(False)
 
 
@@ -52,37 +51,74 @@ def _stack_totals(fig: go.Figure, p: Palette, years: list[int], totals: list[int
 
 
 def timeline_figure(df: pd.DataFrame, p: Palette = _DARK) -> go.Figure:
-    fig = go.Figure()
-    lanes = [c for c in CATEGORIES if c in set(df["category"])]
+    """Lollipop timeline: one stem per report, height = severity band, colour = category."""
+    unrated_y = 0.5
+    heights = df["score"].where(df["score"] > 0, unrated_y)
+    y_max = max(float(heights.max()), 6.0) + 3.4
     symbols = {"Confirmed": "circle", "Reported": "diamond", "Claimed": "circle-open"}
-    for severity in SEVERITIES:
-        part = df[df["severity"] == severity]
+    fig = go.Figure()
+
+    years = list(range(int(df["year"].min()), int(df["year"].max()) + 1))
+    for year in years:
+        if year % 2 == 0:
+            fig.add_shape(type="rect", xref="x", yref="paper", x0=f"{year}-01-01", x1=f"{year + 1}-01-01", y0=0, y1=1,
+                          fillcolor=p.soft, line_width=0, layer="below")
+    for name, low, high in (("Low", 0.75, 2.5), ("Medium", 2.5, 4.5), ("High", 4.5, 5.5), ("Critical", 5.5, y_max)):
+        fig.add_shape(type="rect", xref="paper", yref="y", x0=0, x1=1, y0=low, y1=high, line_width=0, layer="below",
+                      fillcolor=SEVERITY_COLORS[name], opacity=0.07 if not p.light else 0.10)
+        fig.add_annotation(xref="paper", yref="y", x=0.002, y=(low + min(high, 7.0)) / 2, text=name.upper(), showarrow=False, xanchor="left",
+                           font=dict(size=10, color=SEVERITY_COLORS[name] if not p.light else p.muted, family="JetBrains Mono, monospace"))
+
+    for category in CATEGORIES:
+        part = df[df["category"] == category]
         if part.empty:
             continue
+        y = heights.loc[part.index]
+        stem_x, stem_y = [], []
+        for day, top in zip(part["date"], y):
+            stem_x += [day, day, None]
+            stem_y += [0, top, None]
+        fig.add_trace(go.Scatter(x=stem_x, y=stem_y, mode="lines", line=dict(color=CATEGORY_COLORS[category], width=2), opacity=0.55,
+                                 hoverinfo="skip", showlegend=False, legendgroup=category))
         fig.add_trace(go.Scatter(
-            x=part["date"], y=part["category"], mode="markers", name=severity,
-            marker=dict(size=SEVERITY_SIZE[severity], color=SEVERITY_COLORS[severity], opacity=0.92,
-                        symbol=part["verification"].map(symbols), line=dict(width=1.5, color=p.edge)),
-            customdata=part[["title", "verification", "sector"]].map(html.escape).to_numpy(),
-            hovertemplate="<b>%{customdata[0]}</b><br>%{x|%d %b %Y} | %{customdata[2]}<br>%{customdata[1]}<extra></extra>",
+            x=part["date"], y=y, mode="markers", name=category, legendgroup=category,
+            marker=dict(size=15, color=CATEGORY_COLORS[category], symbol=part["verification"].map(symbols), line=dict(width=2, color=p.edge)),
+            customdata=part[["title", "verification", "severity", "sector"]].map(html.escape).to_numpy(),
+            hovertemplate="<b>%{customdata[0]}</b><br>%{x|%d %b %Y} | %{customdata[3]}<br>"
+                          f"{html.escape(category)} | %{{customdata[2]}} | %{{customdata[1]}}<extra></extra>",
         ))
+
     flagged = df[df["severity"].isin(["Critical", "High"])].sort_values("date")
-    for i, row in enumerate(flagged.itertuples()):
+    start = pd.Timestamp(f"{years[0]}-01-01")
+    late = pd.Timestamp(f"{years[-1]}-01-01") - pd.Timedelta(days=200)
+    per_year = 880 / max((pd.Timestamp(f"{years[-1] + 1}-01-01") - start).days / 365.25, 1)  # rough pixels per year
+    rows_taken: dict[int, list[tuple[float, float]]] = {}
+    label_rows = [y_max - 0.6 - 0.85 * n for n in range(4)]  # fixed label rows above the data, in axis units
+    for row in flagged.itertuples():
+        text = _short(row.title, 24)
+        left = row.date >= late  # labels near the right edge open leftwards so they stay inside the plot
+        x = (row.date - start).days / 365.25
+        width = (len(text) * 5.4 + 20) / per_year
+        lo, hi = (x - width, x) if left else (x, x + width)
+        level = next((n for n in range(len(label_rows)) if all(hi < a - 0.05 or lo > b + 0.05 for a, b in rows_taken.get(n, []))), len(label_rows) - 1)
+        rows_taken.setdefault(level, []).append((lo, hi))
         fig.add_annotation(
-            x=row.date, y=row.category, text=_short(row.title), showarrow=True, arrowhead=0, arrowwidth=1,
-            arrowcolor=SEVERITY_COLORS[row.severity], ax=0, ay=-40 if i % 2 == 0 else 40, font=dict(size=10, color=p.text),
-            bgcolor=p.hover_bg, bordercolor=SEVERITY_COLORS[row.severity], borderpad=3, opacity=0.95,
+            x=row.date, y=heights.loc[row.Index], ax=row.date, ay=label_rows[level], axref="x", ayref="y", text=text, showarrow=True, arrowhead=0,
+            arrowwidth=1, arrowcolor=CATEGORY_COLORS[row.category], xanchor="right" if left else "left", font=dict(size=10, color=p.text),
+            bgcolor=p.hover_bg, bordercolor=CATEGORY_COLORS[row.category], borderpad=3, opacity=0.96,
         )
-    for day, label in data.MILESTONES:
+    for day, label, short in data.MILESTONES:
         x = day.isoformat()
         fig.add_shape(type="line", x0=x, x1=x, y0=0, y1=1, yref="paper", line=dict(color=p.accent, width=1, dash="dot"))
-        fig.add_annotation(x=x, y=1, yref="paper", text=html.escape(label), showarrow=False, xanchor="left", yanchor="top",
-                           font=dict(size=10, color=p.accent), xshift=4)
-    fig = _layout(fig, p, 420, margin=dict(l=8, r=8, t=40, b=8),
-                  legend=dict(orientation="h", x=0, y=1.13, title=dict(text="Severity  ", font=dict(color=p.muted, size=11)), font=dict(color=p.muted)))
-    fig.update_yaxes(categoryorder="array", categoryarray=lanes[::-1], title=None, tickfont=dict(color=p.text, size=12))
-    fig.update_xaxes(rangeslider=dict(visible=True, thickness=0.06, bgcolor=p.soft))
-    _titles(fig, p, x="Date reported")
+        fig.add_annotation(x=x, y=0, yref="paper", text=html.escape(short), hovertext=html.escape(label), showarrow=False, xanchor="left", yanchor="bottom",
+                           font=dict(size=10, color=p.accent), xshift=6, yshift=8, captureevents=True)
+
+    fig = _layout(fig, p, 480, margin=dict(l=8, r=8, t=40, b=8),
+                  legend=dict(orientation="h", x=0, y=1.14, title=dict(text="Category  ", font=dict(color=p.muted, size=11)), font=dict(color=p.muted)))
+    fig.update_xaxes(range=[f"{years[0]}-01-01", f"{years[-1] + 1}-01-01"], tickvals=[f"{y}-07-01" for y in years], ticktext=[str(y) for y in years],
+                     showgrid=False, ticks="")
+    fig.update_yaxes(range=[0, y_max], showticklabels=False, showgrid=False, zeroline=True, zerolinecolor=p.muted, zerolinewidth=1)
+    _titles(fig, p, x="Year reported (stem height = severity band, marker shape = verification)")
     return fig
 
 
@@ -199,7 +235,8 @@ def insights(df: pd.DataFrame) -> dict[str, str]:
     top_year, top_count = int(by_year.idxmax()), int(by_year.max())
     categories, sectors = df["category"].value_counts(), df["sector"].value_counts()
     severe = df[df["severity"].isin(["High", "Critical"])]
-    worst = df.sort_values(["score", "date"], ascending=[False, False]).iloc[0]
+    rated = df[df["score"] > 0]
+    worst = rated.sort_values(["score", "date"], ascending=[False, False]).iloc[0] if len(rated) else None
     confirmed = (df["verification"] == "Confirmed").mean()
     first, last = df["date"].min(), df["date"].max()
     s = "s" if len(df) != 1 else ""
@@ -207,7 +244,8 @@ def insights(df: pd.DataFrame) -> dict[str, str]:
         "yearly": f"<b>{top_year}</b> has the most reports ({top_count}). The most common type overall is <b>{html.escape(categories.index[0])}</b> ({categories.iloc[0]} of {len(df)}).",
         "category": f"<b>{categories.iloc[0] / len(df):.0%}</b> of the reports are <b>{html.escape(categories.index[0])}</b>. Hover a slice for the count.",
         "sector": f"<b>{html.escape(sectors.index[0])}</b> appears most often ({sectors.iloc[0]} of {len(df)}). Darker cells mean more reports that year.",
-        "severity": f"<b>{len(severe)}</b> of {len(df)} reports are High or Critical. The most severe: <b>{html.escape(worst['title'])}</b> ({worst['date']:%b %Y}).",
+        "severity": (f"<b>{len(severe)}</b> of {len(rated)} rated reports are High or Critical. The most severe: <b>{html.escape(worst['title'])}</b> ({worst['date']:%b %Y})."
+                     + (f" {len(df) - len(rated)} unreviewed live result(s) are not rated." if len(df) > len(rated) else "")) if worst is not None else "None of the reports in view have been rated yet.",
         "cumulative": f"<b>{len(df)}</b> report{s} between {first:%b %Y} and {last:%b %Y}. Steeper steps mean more reports in a short time; red callouts mark Critical incidents.",
         "status": f"<b>{confirmed:.0%}</b> of the records are confirmed by the victim or an authority; the rest rest on credible media or research.",
         "official": "Registered cases barely moved, but <b>financial scams and fraud</b> nearly doubled. These are police case counts, not the incidents mapped here.",

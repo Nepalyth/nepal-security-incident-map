@@ -1,6 +1,6 @@
 # nepal-security-incident-map
 
-**Nepal Cyber Incident Map** (नेपाल साइबर घटना नक्सा): a single-page, glass-style cyber dashboard with an incident radar map, a story timeline and historical trends of cybersecurity incidents that were **publicly reported or officially disclosed** in Nepal. Built with Streamlit and Plotly, with a Himalayan skyline hero, the Nepal flag and a live signal ticker.
+🛡️🚨 **Nepal Cyber Incident Map** (नेपाल साइबर घटना नक्सा): a single-page, glass-style cyber dashboard with an incident radar map, a story timeline and historical trends of cybersecurity incidents that were **publicly reported or officially disclosed** in Nepal. Built with Streamlit and Plotly, with a Himalayan skyline hero, the Nepal flag and a live signal ticker.
 
 ## What you get
 
@@ -8,13 +8,24 @@ One scrolling page with a fixed top bar that jumps to each section. Filters sit 
 
 | Section | Contents |
 | --- | --- |
+| Cyber globe | An interactive 3D dotted globe in the style of a live cyber map: drag to rotate, Globe / Nepal / Spin buttons, a pulsing Nepal hub that opens into city beacons when you zoom in, hover cards, and live counters by categoUnlike a sensor network such as Kaspersky Cybermap, this globe shows reported incidents, not live traffic. It draws no attack arcs because public reports rarely say where an attack came from, and guessing would be an unverified accusation. Real-time telemetry needs a data provider; feed it in through an authorised feed and it will show up here.ry. Amber dashed rings mark unreviewed live web headlines |
 | Incident radar | Offline map of Nepal with province shading, pulsing city pins coloured by severity, hover cards, and a latest-reports feed with Bikram Sambat dates |
-| Timeline | A category-over-time chart, then an alternating story timeline grouped by year, newest first |
+| Timeline | A stem ("lollipop") chart of every report by year, severity band and category, then an alternating story timeline grouped by year, newest first |
 | Historical trends | Incidents per year by category, sector-by-year heatmap, severity by year, cumulative reports, verification mix, plus official Nepal Police Cyber Bureau case counts for context |
 | Incident log | Filterable table, CSV export, and a detail card with the severity breakdown and source link |
-| Method and safeguards | Severity rubric, safeguards, feed upload and the list of sources |
+| Method and safeguards | Severity rubric, safeguards and feed upload |
 
 Every record carries: **category** (ransomware, data exposure, phishing, defacement, service disruption, financial fraud), **reported date**, **affected sector**, **source** (name, type, link), **verification status** and a calculated **severity**.
+
+## Screenshots
+
+**Nepal Cyber Incident Map**
+
+![Nepal Cyber Incident Map dashboard](docs/screenshots/nepal%20cyber%20incident%20map.png)
+
+**Incident radar**
+
+![Incident radar map of Nepal with latest reports](docs/screenshots/incident%20radar.png)
 
 ## Run
 
@@ -76,7 +87,20 @@ To correct or remove a record, edit its row (or delete it) and re-run the tests;
 
 ### Keeping the data current
 
-New incidents reach the dashboard four ways. Every one passes the same validation, so nothing sensitive gets in.
+New incidents reach the dashboard five ways. Every one passes the same validation, so nothing sensitive gets in.
+
+### Live web search
+
+Choose **Live web search** or **Both** under *Data source*, then press **Scan the live web now**. The app reads public RSS feeds (six Google News searches such as "Nepal ransomware", plus The Kathmandu Post, Onlinekhabar English, TechPana and ICT Frame), keeps headlines that look like Nepal cyber incidents, and shows them next to the curated CSV.
+
+- **Headlines only.** It reads title, link and date from feeds meant for syndication. It never opens article pages, copies article text or stores anything.
+- **Unreviewed and unrated.** Category, sector and city come from keyword rules and can be wrong, so live results are tagged *LIVE WEB / UNREVIEWED*, shown grey with severity *Unrated*, and repeated stories are collapsed. Results already in the curated CSV are dropped.
+- **Polite.** One network scan per look-back window every five minutes, shared by all visitors; each feed has a short timeout, a 2 MB cap, and a DTD/entity ban for XML. Redirects are only followed within the same host.
+- **Publish after checking.** To make a live result part of the record, read the source, then add it through the CSV, a feed or the maintainer form with a real severity.
+- Set `INCIDENT_LIVE_DISABLED=1` to switch it off, for example where a news provider's terms don't allow this use.
+- Turn on **Auto-refresh every 5 minutes** to re-check in the background; the page (including the globe) redraws only when a new headline appears.
+
+The globe shows reported incidents, not sensor traffic like Kaspersky Cybermap, and deliberately draws **no attack arcs**: reports rarely say where an attack came from, so arcs would be unverified accusations. It runs offline from a bundled dotted land map (Natural Earth, public domain) inside an isolated iframe, and writes record text with `textContent` only. Genuine real-time telemetry needs a provider; its output can be added as an authorised feed.
 
 | Way | How | Best for |
 | --- | --- | --- |
@@ -85,12 +109,6 @@ New incidents reach the dashboard four ways. Every one passes the same validatio
 | Maintainer form | Set `INCIDENT_DATA_DIR` (a persistent folder) and `INCIDENT_ADMIN_TOKEN`. A form appears in the Method section; records are validated and saved to `incidents_local.csv`, and show for everyone on the next page load | A server or VM you control |
 | Upload | Drop a CSV or JSON file in the Method section; it lives only in that browser session | Checking a file before publishing it |
 
-The maintainer form is off unless both variables are set, compares the token in constant time and locks after five wrong tokens in a session. The **Refresh data now** button clears the caches immediately. Feed hosts must resolve to public addresses, redirects are not followed, and responses are limited to 2 MB and 2,000 records.
+The maintainer form is off unless both variables are set, compares the token in constant time and locks after five wrong tokens in a session. The **Refresh data now** button clears the caches immediately. Feed hosts must resolve to public addresses, redirects must stay on the same host, and responses are limited to 2 MB and 2,000 records.
 
 JSON feeds can be a list of objects or `{"incidents": [...]}`.
-
-## Sources and credits
-
-Incident reports: The Kathmandu Post, Republica (Reuters), Financial Notices (Naya Patrika), ICT Frame, Nepali ICT and Digital Solution Nepal (summarising TechPana). Each record links to its own source. Annual case counts: Nepal Police Cyber Bureau via The Kathmandu Post.
-
-Province outlines: [geoBoundaries](https://www.geoboundaries.org/) Nepal ADM1 (CC BY 3.0 IGO), from the Survey Department of Nepal and OCHA, simplified for display.

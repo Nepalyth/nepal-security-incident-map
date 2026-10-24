@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import csv
 import html
-from datetime import date
+import time
+from datetime import date, datetime
 
 import pandas as pd
 import streamlit as st
 
-from nepal_incident_map import charts, data, theme, visuals
+from nepal_incident_map import charts, data, globe, live, theme, visuals
 from nepal_incident_map.geo import GAZETTEER, NATIONWIDE
 from nepal_incident_map.schema import (
     CATEGORIES, DATA_POINTS, SCOPE_POINTS, SECTORS, SERVICE_POINTS, SEVERITIES, SOURCE_TYPES, VERIFICATION,
@@ -51,6 +52,22 @@ def _remote_rows(url: str) -> tuple[list[dict[str, object]], str]:
         return [], str(exc)
 
 
+@st.cache_data(ttl=900, max_entries=6, show_spinner=False)
+def _scan(days: int, bucket: int) -> live.ScanResult:
+    """One network scan per look-back window every five minutes, shared by all sessions to go easy on the feeds."""
+    return live.scan(days)
+
+
+@st.fragment(run_every=300)
+def _auto_scan(days: int) -> None:
+    """Re-check the feeds every five minutes and redraw the whole page only when the headlines changed."""
+    fresh, old = _scan(days, int(time.time() // 300)), st.session_state.get("scan")
+    if old is None or [r["id"] for r in fresh.rows] != [r["id"] for r in old.rows]:
+        st.session_state["scan"] = fresh
+        st.rerun()
+    st.caption(f"Auto-refresh on. Last check {datetime.now():%H:%M}; the next in about 5 minutes.")
+
+
 def _csv_safe(value: object) -> object:
     """Neutralise spreadsheet formulas in exported text cells."""
     return "'" + value if isinstance(value, str) and value.startswith(("=", "+", "-", "@")) else value
@@ -70,12 +87,23 @@ for upload in st.session_state.get("feed_upload") or []:
     except (ValueError, csv.Error) as exc:
         feed_errors.append(f"{upload.name[:40]}: {exc}")
 
+mode = st.session_state.get("source_mode") or "Curated CSV"
+scan: live.ScanResult | None = st.session_state.get("scan") if live.enabled() else None
+known_dupes = 0
+if scan and mode != "Curated CSV":
+    fresh, known_dupes = live.drop_known(
+        scan.rows, [str(r.get("title", "")) for _, r in rows], {str(r.get("source_url", "")) for _, r in rows},
+    )
+    live_rows = [("web", r) for r in fresh]
+    rows = live_rows if mode == "Live web search" and live_rows else rows + live_rows
+
 result = data.build_frame(rows)
 everything = result.incidents
 if everything.empty:
     st.error("No valid incident records could be loaded.")
     st.stop()
 first_day, last_day = everything["date"].min().date(), everything["date"].max().date()
+sev_options = [s for s in SEVERITIES if s != "Unrated" or (everything["severity"] == "Unrated").any()]
 
 # ---------------------------------------------------------------- nav, hero, filters
 _html(visuals.nav_html())
@@ -88,11 +116,36 @@ for message in feed_errors:
     st.warning(f"Feed skipped: {message}")
 
 with st.container(border=True):
-    st.markdown('<div class="ptitle">Filters <span class="note">&nbsp;every section below follows these</span></div>', unsafe_allow_html=True)
+    st.markdown('<div class="ptitle">Data and filters <span class="note">&nbsp;every section below follows these</span></div>', unsafe_allow_html=True)
+    if live.enabled():
+        chosen_mode = st.segmented_control(
+            "Data source", ["Curated CSV", "Live web search", "Both"], default="Curated CSV", key="source_mode",
+            help="Curated CSV is the reviewed dataset. Live web search reads public news RSS feeds for new headlines (unreviewed). Both shows them together.",
+        ) or "Curated CSV"
+        if chosen_mode != "Curated CSV":
+            k1, k2, k3 = st.columns([1, 1.2, 3], gap="medium")
+            days = k1.selectbox("Look back", live.LOOKBACK_DAYS, index=1, key="live_days", format_func=lambda d: f"{d} days" if d < 365 else "1 year")
+            first_scan = st.session_state.get("scan") is None
+            k2.markdown('<div style="height:1.65rem"></div>', unsafe_allow_html=True)
+            if k2.button("Scan the live web now", key="scan_btn") or first_scan:
+                with st.spinner("Reading public news feeds..."):
+                    st.session_state["scan"] = _scan(days, int(time.time() // 300))
+                st.rerun()
+            if scan:
+                when = datetime.fromisoformat(scan.fetched_at).astimezone().strftime("%d %b %H:%M")
+                k3.markdown(
+                    f'<p class="note">Last scan {when}: {scan.feeds_ok} of {scan.feeds_total} feeds read, {scan.seen} headlines checked, '
+                    f'<b>{scan.matched}</b> look like Nepal cyber incidents, {known_dupes} already in the curated data.</p>', unsafe_allow_html=True)
+                if scan.errors:
+                    with k3.expander(f"{len(scan.errors)} feed(s) could not be read"):
+                        st.write("\n".join(f"- {esc(e)}" for e in scan.errors))
+            with k3:
+                if st.toggle("Auto-refresh every 5 minutes", key="auto_scan", help="Re-checks the feeds in the background and redraws the page when a new headline appears."):
+                    _auto_scan(days)
     c1, c2 = st.columns([1, 1.4], gap="large")
     span = c1.date_input("Reported between", value=(first_day, last_day), min_value=first_day, max_value=last_day)
     query = c2.text_input("Search", placeholder="bank, ransomware, airport...")
-    severities = st.pills("Severity", SEVERITIES, selection_mode="multi", default=list(SEVERITIES))
+    severities = st.pills("Severity", sev_options, selection_mode="multi", default=sev_options)
     statuses = st.pills(
         "Verification", VERIFICATION, selection_mode="multi", default=["Confirmed", "Reported"],
         help="\n\n".join(f"**{k}**: {v}" for k, v in VERIFICATION_HELP.items()),
@@ -119,6 +172,11 @@ if df.empty:
 # ---------------------------------------------------------------- KPIs
 today = pd.Timestamp.today().normalize()
 read = charts.insights(df)
+if (n_live := int((df["origin"] == "web").sum())):
+    _html(
+        f'<div class="callout"><b>{n_live} live web result(s) in view.</b> These are headlines from public news feeds, sorted into categories by keywords. '
+        "They are unreviewed and unrated, so open the source before relying on one. The curated CSV stays the reviewed record.</div>"
+    )
 recent = int((df["date"] > today - pd.DateOffset(months=12)).sum())
 previous = int(((df["date"] <= today - pd.DateOffset(months=12)) & (df["date"] > today - pd.DateOffset(months=24))).sum())
 serious = int(df["severity"].isin(["High", "Critical"]).sum())
@@ -133,8 +191,19 @@ _html(
     + "</div>"
 )
 
-# ---------------------------------------------------------------- 01 map
-_html(visuals.section_head("map", "01", "Incident radar", "Each pulse is a city with reported incidents. Hover or tap a pin to read what was reported there."))
+# ---------------------------------------------------------------- 01 globe
+_html(visuals.section_head("globe", "01", "Cyber globe", "Drag the globe to rotate it. Each pulsing beacon is a place with reported incidents; amber dashed rings are unreviewed live web headlines."))
+with st.container(border=True):
+    st.iframe(globe.globe_src(df, light), height=580)
+    st.markdown(
+        '<p class="note">Unlike a sensor network such as Kaspersky Cybermap, this globe shows <b>reported incidents</b>, not live traffic. '
+        "It draws no attack arcs because public reports rarely say where an attack came from, and guessing would be an unverified accusation. "
+        "Real-time telemetry needs a data provider; feed it in through an authorised feed and it will show up here.</p>",
+        unsafe_allow_html=True,
+    )
+
+# ---------------------------------------------------------------- 02 map
+_html(visuals.section_head("map", "02", "Incident radar", "Each pulse is a city with reported incidents. Hover or tap a pin to read what was reported there."))
 map_col, feed_col = st.columns([5, 2], gap="medium")
 with map_col, st.container(border=True):
     _html(visuals.map_html(df))
@@ -148,15 +217,15 @@ with feed_col, st.container(border=True, height=600):
     _html(visuals.feed_html(df))
 
 # ---------------------------------------------------------------- 02 timeline
-_html(visuals.section_head("story", "02", "Timeline", "The chart shows when each type of incident was reported. The story below reads newest first, one card per report."))
+_html(visuals.section_head("story", "03", "Timeline", "The chart shows every report by year and severity. The story below reads newest first, one card per report."))
 with st.container(border=True):
-    st.markdown('<div class="ptitle">Overview: category over time</div>', unsafe_allow_html=True)
-    st.caption("Marker size = severity. Circle = confirmed, diamond = reported, open circle = claimed. Labels name the High and Critical incidents. Drag the slider under the chart to zoom.")
+    st.markdown('<div class="ptitle">Overview: every report by year and severity</div>', unsafe_allow_html=True)
+    st.caption("Each stem is one report. Height shows its severity band, colour shows the category, and the shape shows verification (circle = confirmed, diamond = reported, open = claimed). Labels name the High and Critical incidents; hover any marker for details.")
     st.plotly_chart(charts.timeline_figure(df, pal), **PLOT)
 _html(visuals.timeline_html(df))
 
 # ---------------------------------------------------------------- 03 trends
-_html(visuals.section_head("trends", "03", "Historical trends", "Counts are of publicly reported incidents, so a rise can mean better disclosure as much as more attacks."))
+_html(visuals.section_head("trends", "04", "Historical trends", "Counts are of publicly reported incidents, so a rise can mean better disclosure as much as more attacks."))
 a, b = st.columns([2, 1], gap="medium")
 with a, st.container(border=True):
     st.markdown('<div class="ptitle">Reported incidents per year</div>', unsafe_allow_html=True)
@@ -203,19 +272,20 @@ with h, st.container(border=True):
     ))
 
 # ---------------------------------------------------------------- 04 log
-_html(visuals.section_head("log", "04", "Incident log", "Every record in a table. Download the filtered set, or open one incident to see how its severity was scored."))
+_html(visuals.section_head("log", "05", "Incident log", "Every record in a table. Download the filtered set, or open one incident to see how its severity was scored."))
 with st.container(border=True):
-    table = df[["date", "category", "sector", "organisation", "title", "severity", "verification", "source_name", "source_url"]]
+    table = df.assign(data=df["origin"].map(lambda o: "Live web" if o == "web" else o.split(":")[0].capitalize()))[
+        ["date", "data", "category", "sector", "organisation", "title", "severity", "verification", "source_name", "source_url"]]
     st.dataframe(
         table, hide_index=True, width="stretch",
         column_config={
-            "date": st.column_config.DateColumn("Reported", format="DD MMM YYYY"),
+            "date": st.column_config.DateColumn("Reported", format="DD MMM YYYY"), "data": "Data",
             "category": "Category", "sector": "Sector", "organisation": "Organisation", "title": st.column_config.TextColumn("Incident", width="large"),
             "severity": "Severity", "verification": "Status", "source_name": "Source",
             "source_url": st.column_config.LinkColumn("Link", display_text="open"),
         },
     )
-    export = df.drop(columns=["year", "origin"]).assign(locations=df["locations"].map("; ".join)).map(_csv_safe)
+    export = df.drop(columns=["year"]).assign(locations=df["locations"].map("; ".join)).map(_csv_safe)
     st.download_button("Download filtered records (CSV)", export.to_csv(index=False).encode("utf-8"), "nepal-cyber-incidents.csv", "text/csv")
 
 chosen = st.selectbox(
@@ -244,7 +314,7 @@ with score, st.container(border=True):
     )
 
 # ---------------------------------------------------------------- 05 method
-_html(visuals.section_head("how", "05", "Method and safeguards", "How incidents are verified, scored and kept free of anything sensitive."))
+_html(visuals.section_head("how", "06", "Method and safeguards", "How incidents are verified, scored and kept free of anything sensitive."))
 m1, m2 = st.columns(2, gap="medium")
 with m1, st.container(border=True):
     st.markdown('<div class="ptitle">Severity rubric</div>', unsafe_allow_html=True)
@@ -271,7 +341,7 @@ with st.container(border=True):
     st.markdown(
         "Upload a CSV or JSON file, or set `INCIDENT_FEED_URLS` (comma-separated https URLs) on the server. Every record is validated and "
         "anything with personal data, indicators of compromise or exploit detail is rejected. Uploads live only in this session. "
-        "Feed hosts must resolve to public addresses and redirects are not followed.\n\n"
+        "Feed hosts must resolve to public addresses and redirects must stay on the same host.\n\n"
         "Columns: `id, reported_date, category, sector, organisation, title, summary, locations, source_name, source_type, "
         "source_url, verification, scope, service_impact, data_impact, loss_npr_million, critical_systems, notes`."
     )
@@ -283,12 +353,15 @@ with st.container(border=True):
     origins = everything["origin"].str.split(":").str[0].value_counts()
     _html(" ".join(theme.chip(f"{name}: {count}") for name, count in origins.items()))
     st.markdown(
-        "New incidents reach the dashboard four ways, and every one passes the same validation:\n\n"
-        "1. **Edit the dataset** (`incidents.csv`) and redeploy.\n"
-        f"2. **Point at a feed**: set `INCIDENT_FEED_URLS` to a CSV or JSON file (for example a raw file in a repository). "
+        "New incidents reach the dashboard five ways, and every one passes the same validation:\n\n"
+        "1. **Live web search**: choose it under *Data source* and press *Scan the live web now*. It reads the RSS feeds of Google News searches and four Nepali outlets, "
+        "keeps only headlines that look like Nepal cyber incidents, and shows them as unreviewed and unrated. Nothing is saved. Set `INCIDENT_LIVE_DISABLED=1` to turn it off.\n"
+        "2. **Edit the dataset** (`incidents.csv`) and redeploy.\n"
+        f"3. **Point at a feed**: set `INCIDENT_FEED_URLS` to a CSV or JSON file (for example a raw file in a repository). "
         f"It is re-read every {data.feed_ttl_seconds() // 60} minutes (`INCIDENT_FEED_TTL` seconds).\n"
-        "3. **Add in the app**: set `INCIDENT_DATA_DIR` and `INCIDENT_ADMIN_TOKEN` on a server with persistent storage to unlock the maintainer form below.\n"
-        "4. **Upload a file** for a private, session-only view."
+        "4. **Add in the app**: set `INCIDENT_DATA_DIR` and `INCIDENT_ADMIN_TOKEN` on a server with persistent storage to unlock the maintainer form below.\n"
+        "5. **Upload a file** for a private, session-only view.\n\n"
+        "To publish a live result, open its source, check the facts, then add it through option 2, 3 or 4 with a proper severity."
     )
     if st.button("Refresh data now"):
         st.cache_data.clear()
@@ -342,14 +415,7 @@ if data.admin_enabled():
                         st.session_state["flash"] = "Published. It is now in the dataset."
                         st.rerun()
 
-with st.container(border=True):
-    st.markdown('<div class="ptitle">Sources</div>', unsafe_allow_html=True)
-    sources = everything[["source_name", "source_url"]].drop_duplicates(["source_url"])
-    st.markdown("\n".join(
-        f"- [{s.source_name.replace('[', '(').replace(']', ')')}]({s.source_url.replace(')', '%29')})" for s in sources.itertuples()
-    ))
-    st.caption("Province outlines: geoBoundaries Nepal ADM1 (CC BY 3.0 IGO), from the Survey Department of Nepal and OCHA.")
-    if result.rejected:
-        with st.expander(f"{len(result.rejected)} record(s) rejected during validation"):
-            for item in result.rejected:
-                st.markdown(f"**{esc(item.origin)} / {esc(item.record)}**: " + esc("; ".join(item.problems)))
+if result.rejected:
+    with st.expander(f"{len(result.rejected)} record(s) rejected during validation"):
+        for item in result.rejected:
+            st.markdown(f"**{esc(item.origin)} / {esc(item.record)}**: " + esc("; ".join(item.problems)))

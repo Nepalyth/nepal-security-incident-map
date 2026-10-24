@@ -22,7 +22,7 @@ SECTORS = (
 )
 VERIFICATION = ("Confirmed", "Reported", "Claimed")
 SOURCE_TYPES = ("Official statement", "Law enforcement / regulator", "News media", "Security researcher", "Authorized feed")
-SEVERITIES = ("Low", "Medium", "High", "Critical")
+SEVERITIES = ("Unrated", "Low", "Medium", "High", "Critical")
 
 VERIFICATION_HELP = {
     "Confirmed": "Acknowledged by the affected organisation, a regulator or law enforcement.",
@@ -71,6 +71,7 @@ class Incident:
     loss_npr_million: float | None
     critical_systems: bool
     notes: str
+    assessed: bool = True
 
 
 def score_parts(
@@ -95,6 +96,11 @@ def severity_label(score: int) -> str:
     if score >= 3:
         return "Medium"
     return "Low"
+
+
+def severity_of(score: int) -> str:
+    """Severity for a stored score; 0 marks a record nobody has assessed yet (for example a live web result)."""
+    return "Unrated" if score <= 0 else severity_label(score)
 
 
 def _text(value: object) -> str:
@@ -122,7 +128,7 @@ def _check_text(value: str, field: str, limit: int, problems: list[str]) -> None
 
 def check_source_url(url: str) -> str | None:
     """Return a problem description, or None when the URL is an acceptable public https link."""
-    if len(url) > 300:
+    if len(url) > 600:
         return "source_url: too long"
     parts = urlparse(url)
     host = (parts.hostname or "").lower()
@@ -219,4 +225,5 @@ def validate_record(raw: Mapping[str, object]) -> tuple[Incident | None, list[st
         title=title, summary=summary, locations=locations, source_name=source_name, source_type=source_type,
         source_url=source_url, verification=verification, scope=scope, service_impact=service,
         data_impact=data_impact, loss_npr_million=loss, critical_systems=flag in _TRUE, notes=notes,
+        assessed=_text(raw.get("assessed")).casefold() not in {"false", "no", "0"},
     ), []

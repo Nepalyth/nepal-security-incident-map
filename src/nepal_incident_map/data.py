@@ -24,7 +24,7 @@ import nepali_datetime
 import pandas as pd
 
 from nepal_incident_map.geo import GAZETTEER
-from nepal_incident_map.schema import Incident, check_source_url, score_parts, severity_label, validate_record
+from nepal_incident_map.schema import Incident, check_source_url, score_parts, severity_of, validate_record
 
 MAX_FEED_BYTES = 2_000_000
 MAX_FEED_ROWS = 2_000
@@ -46,7 +46,7 @@ COLUMNS = [
 ]
 
 # Sourced context events drawn on the timeline.
-MILESTONES = [(date(2024, 1, 23), "National Cyber Security Centre approved by Cabinet")]
+MILESTONES = [(date(2024, 1, 23), "National Cyber Security Centre approved by Cabinet", "NCSC approved")]
 
 # Nepal Police Cyber Bureau registered cases, as reported by The Kathmandu Post (22 July 2025).
 CYBER_BUREAU_STATS = pd.DataFrame({
@@ -74,6 +74,12 @@ class LoadResult:
 def load_provinces() -> dict[str, list[list[list[float]]]]:
     """Simplified province outlines: geoBoundaries NPL ADM1 (CC BY 3.0 IGO; Survey Department of Nepal, OCHA)."""
     return json.loads(resources.files("nepal_incident_map").joinpath("data/nepal_provinces.json").read_text("utf-8"))
+
+
+@lru_cache(maxsize=1)
+def load_world_dots() -> dict[str, list[list[float]]]:
+    """Dotted world land for the globe, sampled from Natural Earth 110m land (public domain)."""
+    return json.loads(resources.files("nepal_incident_map").joinpath("data/world_dots.json").read_text("utf-8"))
 
 
 def load_seed_rows() -> list[dict[str, str]]:
@@ -172,7 +178,7 @@ def build_frame(rows: Iterable[tuple[str, Mapping[str, object]]]) -> LoadResult:
         score = sum(points for _, points in score_parts(
             incident.scope, incident.service_impact, incident.data_impact,
             incident.loss_npr_million, incident.critical_systems,
-        ))
+        )) if incident.assessed else 0
         records.append({
             "id": incident.id, "date": pd.Timestamp(incident.reported_date), "year": incident.reported_date.year,
             "category": incident.category, "sector": incident.sector, "organisation": incident.organisation,
@@ -181,7 +187,7 @@ def build_frame(rows: Iterable[tuple[str, Mapping[str, object]]]) -> LoadResult:
             "source_url": incident.source_url, "verification": incident.verification, "scope": incident.scope,
             "service_impact": incident.service_impact, "data_impact": incident.data_impact,
             "loss_npr_million": incident.loss_npr_million, "critical_systems": incident.critical_systems,
-            "notes": incident.notes, "score": score, "severity": severity_label(score), "origin": origin,
+            "notes": incident.notes, "score": score, "severity": severity_of(score), "origin": origin,
         })
     frame = pd.DataFrame(records, columns=COLUMNS)
     frame["date"] = pd.to_datetime(frame["date"])
@@ -210,13 +216,20 @@ def configured_feed_urls() -> list[str]:
     return [u.strip() for u in os.environ.get(FEED_ENV_VAR, "").split(",") if u.strip()]
 
 
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *args, **kwargs):  # noqa: D102
+class _SameHostRedirect(urllib.request.HTTPRedirectHandler):
+    """Follow a redirect only when it stays on the already-vetted https host."""
+
+    def __init__(self, host: str):
+        self.host = host
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if check_source_url(newurl) is None and urlparse(newurl).hostname == self.host:
+            return super().redirect_request(req, fp, code, msg, headers, newurl)
         return None
 
 
 def fetch_feed(url: str, timeout: float = 10.0) -> bytes:
-    """Download an operator-configured feed over https from a public host, without following redirects."""
+    """Download an operator-configured feed over https from a public host; redirects must stay on that host."""
     if (problem := check_source_url(url)) is not None:
         raise ValueError(problem.replace("source_url", "feed URL"))
     host = urlparse(url).hostname or ""
@@ -226,8 +239,11 @@ def fetch_feed(url: str, timeout: float = 10.0) -> bytes:
         raise ValueError("feed host could not be resolved") from exc
     if not addresses or not all(ipaddress.ip_address(a).is_global for a in addresses):
         raise ValueError("feed host must resolve to public addresses only")
-    opener = urllib.request.build_opener(_NoRedirect)
-    request = urllib.request.Request(url, headers={"Accept": "text/csv, application/json"})
+    opener = urllib.request.build_opener(_SameHostRedirect(host))
+    request = urllib.request.Request(url, headers={
+        "Accept": "text/csv, application/json, application/rss+xml, application/xml",
+        "User-Agent": "NepalCyberIncidentMap/0.1 (public headline reader)",
+    })
     try:
         with opener.open(request, timeout=timeout) as response:
             payload = response.read(MAX_FEED_BYTES + 1)
@@ -258,14 +274,14 @@ def location_summary(df: pd.DataFrame) -> pd.DataFrame:
                     "line": f"{item.date:%d %b %Y} | {item.category} | {item.severity}: {item.title}",
                 })
     if not rows:
-        return pd.DataFrame(columns=["location", "lat", "lon", "province", "count", "score", "lines"])
+        return pd.DataFrame(columns=["location", "lat", "lon", "province", "count", "score", "lines", "severity"])
     grouped = pd.DataFrame(rows).groupby("location", sort=False).agg(
         count=("score", "size"), score=("score", "max"), lines=("line", list),
     ).reset_index()
     grouped["lat"] = grouped["location"].map(lambda k: GAZETTEER[k][0])
     grouped["lon"] = grouped["location"].map(lambda k: GAZETTEER[k][1])
     grouped["province"] = grouped["location"].map(lambda k: GAZETTEER[k][2])
-    grouped["severity"] = grouped["score"].map(severity_label)
+    grouped["severity"] = grouped["score"].map(severity_of)
     return grouped
 
 
